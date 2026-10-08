@@ -132,6 +132,52 @@ func TestReadDlpCompliancePolicyCollections(t *testing.T) {
 	// now reports as empty must be emptied, not kept from prior state.
 	readDlpCompliancePolicy(ctx, map[string]any{"ExchangeLocation": []any{}}, &m)
 	assertSet(t, "ExchangeLocation after remote scope removal", m.ExchangeLocation, []string{})
+
+	// Every workload scope preserves multiple identities and observes drift.
+	readDlpCompliancePolicy(ctx, map[string]any{
+		"OneDriveLocation": []any{
+			capturedLocationElement("exec@contoso.com", "od1"),
+			capturedLocationElement("risk@contoso.com", "od2"),
+		},
+		"SharePointLocation": []any{
+			capturedLocationElement("contoso.sharepoint.com/sites/Risk", "sp1"),
+		},
+	}, &m)
+	assertSet(t, "multi-element OneDriveLocation", m.OneDriveLocation, []string{"exec@contoso.com", "risk@contoso.com"})
+	assertSet(t, "SharePointLocation", m.SharePointLocation, []string{"contoso.sharepoint.com/sites/Risk"})
+	readDlpCompliancePolicy(ctx, map[string]any{
+		"OneDriveLocation":   []any{},
+		"SharePointLocation": []any{capturedLocationElement("contoso.sharepoint.com/sites/Other", "sp2")},
+	}, &m)
+	assertSet(t, "OneDriveLocation after remote scope removal", m.OneDriveLocation, []string{})
+	assertSet(t, "SharePointLocation after remote replacement", m.SharePointLocation, []string{"contoso.sharepoint.com/sites/Other"})
+
+	// Set semantics are order-insensitive: a reordered remote array yields an
+	// Equal value (so RequiresReplace on matching state cannot trigger), while
+	// different membership does not (meaningful drift stays detectable).
+	var reordered dlpCompliancePolicyModel
+	readDlpCompliancePolicy(ctx, map[string]any{
+		"ExchangeLocation": []any{
+			capturedLocationElement("First", "g1"),
+			capturedLocationElement("Second", "g2"),
+		},
+	}, &m)
+	readDlpCompliancePolicy(ctx, map[string]any{
+		"ExchangeLocation": []any{
+			capturedLocationElement("Second", "g2"),
+			capturedLocationElement("First", "g1"),
+		},
+	}, &reordered)
+	if !m.ExchangeLocation.Equal(reordered.ExchangeLocation) {
+		t.Errorf("reordered scope reads must be Equal: %v vs %v",
+			setElements(t, m.ExchangeLocation), setElements(t, reordered.ExchangeLocation))
+	}
+	readDlpCompliancePolicy(ctx, map[string]any{
+		"ExchangeLocation": []any{capturedLocationElement("Third", "g3")},
+	}, &reordered)
+	if m.ExchangeLocation.Equal(reordered.ExchangeLocation) {
+		t.Error("changed remote scope must not Equal prior read")
+	}
 }
 
 func TestReadDlpComplianceRuleNotifyUserCollections(t *testing.T) {
