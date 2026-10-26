@@ -229,7 +229,10 @@ func (r *policyConfigResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if _, err := r.client.SCC.SetPolicyConfig(ctx, sp); err != nil {
+	// Full Set-PolicyConfig (read-back flags included) is HTTP 400. Send the
+	// endpoint list only; sp stays so regen of the parameter mapping is obvious.
+	_ = sp
+	if err := r.applyEndpointDlpGlobalSettings(ctx, plan, nil, &resp.Diagnostics); err != nil {
 		resp.Diagnostics.AddError("Set-PolicyConfig failed", err.Error())
 		return
 	}
@@ -341,7 +344,9 @@ func (r *policyConfigResource) Update(ctx context.Context, req resource.UpdateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if _, err := r.client.SCC.SetPolicyConfig(ctx, sp); err != nil {
+	// See Create: do not send the full read-back object.
+	_ = sp
+	if err := r.applyEndpointDlpGlobalSettings(ctx, plan, &state, &resp.Diagnostics); err != nil {
 		resp.Diagnostics.AddError("Set-PolicyConfig failed", err.Error())
 		return
 	}
@@ -438,7 +443,7 @@ func readPolicyConfig(ctx context.Context, obj map[string]any, m *policyConfigMo
 	m.EnableLabelCoauth = types.BoolValue(getBool(obj, "EnableLabelCoauth"))
 	m.EnableSensitivityLabelingForPdf = types.BoolValue(getBool(obj, "EnableSensitivityLabelingForPdf"))
 	m.EnableSpoAipMigration = types.BoolValue(getBool(obj, "EnableSpoAipMigration"))
-	m.EndpointDlpGlobalSettings = stringSetValue(ctx, getStringSlice(obj, "EndpointDlpGlobalSettings"))
+	m.EndpointDlpGlobalSettings = stringSetValue(ctx, endpointDlpGlobalSettingStrings(obj))
 	m.EndpointDlpGlobalSettingsPsws = stringSetValue(ctx, getStringSlice(obj, "EndpointDlpGlobalSettingsPsws"))
 	m.ExtendTeamsDlpPoliciesToSharePointOneDrive = types.BoolValue(getBool(obj, "ExtendTeamsDlpPoliciesToSharePointOneDrive"))
 	m.InformationBarrierMode = types.StringValue(getString(obj, "InformationBarrierMode"))
